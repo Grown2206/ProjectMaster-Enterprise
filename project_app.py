@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import pandas as pd
-from data_manager import ProjectManager
+from data_manager_v2 import get_project_manager
 from auth_manager import AuthManager
 from utils import calculate_days_left, save_uploaded_image, save_uploaded_doc, fetch_git_readme, parse_csv_tasks
 
@@ -29,6 +29,7 @@ from sprint_management import render_sprint_management
 from dashboard_widgets import render_custom_dashboard
 from automation_engine import render_automation_center, execute_automation_rules
 from theme_manager import render_theme_settings, apply_theme, get_theme_css
+from experiment_templates import render_experiment_template_library, render_create_from_experiment_template
 
 # --- SETUP ---
 st.set_page_config(
@@ -66,7 +67,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-if 'manager' not in st.session_state: st.session_state.manager = ProjectManager()
+if 'manager' not in st.session_state: st.session_state.manager = get_project_manager()
 if 'auth' not in st.session_state: st.session_state.auth = AuthManager(st.session_state.manager)
 if 'view' not in st.session_state: st.session_state.view = 'dashboard'
 if 'selected_project_id' not in st.session_state: st.session_state.selected_project_id = None
@@ -131,6 +132,7 @@ def render_sidebar():
     if st.sidebar.button("⏱️ Time Tracking", use_container_width=True): nav_to('timesheet')
     if st.sidebar.button("⚡ Sprint Management", use_container_width=True): nav_to('sprints')
     if st.sidebar.button("🧪 Labor & Tests", use_container_width=True): nav_to('lab')
+    if st.sidebar.button("🧬 Versuchs-Templates", use_container_width=True): nav_to('experiment_templates')
     if st.sidebar.button("🤖 Automation", use_container_width=True): nav_to('automation')
 
     st.sidebar.markdown("---")
@@ -322,6 +324,8 @@ elif st.session_state.view == 'trash': render_trash_bin()
 elif st.session_state.view == 'presentation': render_presentation(st.session_state.selected_project_id)
 elif st.session_state.view == 'lab': render_lab_dashboard(st.session_state.manager)
 elif st.session_state.view == 'experiment_details': render_experiment_details(st.session_state.manager)
+elif st.session_state.view == 'experiment_templates': render_experiment_template_library(st.session_state.manager)
+elif st.session_state.view == 'create_from_experiment_template': render_create_from_experiment_template(st.session_state.manager)
 
 # NEW v2.1 Views - 10 Amazing Features!
 elif st.session_state.view == 'my_dashboard': render_custom_dashboard(st.session_state.manager, st.session_state.auth.current_user_name())
