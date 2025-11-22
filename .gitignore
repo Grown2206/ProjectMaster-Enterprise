@@ -1,0 +1,31 @@
+Virtuelle Umgebung ignorieren
+
+.venv/
+venv/
+env/
+
+Python Cache
+
+pycache/
+*.pyc
+
+Daten ignorieren (WICHTIG: Damit keine Passwörter/Kundendaten hochladen!)
+
+projects_data.json
+users_data.json
+experiments_data.json
+
+Medien-Ordner ignorieren (optional, wenn sie sehr groß sind)
+
+Wenn du Beispielbilder im Repo willst, entferne diese Zeilen
+
+project_images/
+project_docs/
+
+Streamlit Secrets & Config
+
+.streamlit/secrets.toml
+
+VS Code Settings (optional)
+
+.vscode/

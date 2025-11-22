@@ -1,0 +1,282 @@
+import streamlit as st
+import os
+import pandas as pd
+from data_manager import ProjectManager
+from auth_manager import AuthManager
+from utils import calculate_days_left, save_uploaded_image, save_uploaded_doc, fetch_git_readme, parse_csv_tasks
+# Module
+from kanban_board import render_kanban_board
+from ai_assistant import render_ai_assistant
+from global_dashboard import render_global_dashboard
+from pdf_export import create_project_pdf
+from ui_components import *
+from extended_features import *
+from strategy_tools import *
+from knowledge_base import *
+from qa_module import render_qa_dashboard
+from calendar_module import render_calendar_view
+# NEU Phase 6: Experimente
+from experiment_module import render_lab_dashboard, render_experiment_details
+
+# --- SETUP ---
+st.set_page_config(page_title="Project Master Enterprise", page_icon="🏢", layout="wide")
+
+st.markdown("""
+    <style>
+    .card-container { background-color: #1e1e1e; border: 1px solid #333; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; }
+    .card-container:hover { border-color: #00cc99; transform: translateY(-3px); }
+    .notification-box { background-color: #ff4b4b; color: white; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+    .tag-span { background-color: #333; color: #eee; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; margin-right: 5px; }
+    .health-badge-green { color: #00cc99; font-weight: bold; border: 1px solid #00cc99; padding: 2px 8px; border-radius: 8px; }
+    .health-badge-orange { color: orange; font-weight: bold; border: 1px solid orange; padding: 2px 8px; border-radius: 8px; }
+    .health-badge-red { color: #ff4b4b; font-weight: bold; border: 1px solid #ff4b4b; padding: 2px 8px; border-radius: 8px; }
+    
+    /* Presentation Styles */
+    .slide-container { padding: 40px; background: #111; border-radius: 20px; margin-bottom: 50px; border: 1px solid #333; }
+    .slide-title { font-size: 3.5em; font-weight: 900; background: -webkit-linear-gradient(#eee, #555); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 10px; }
+    .slide-section { font-size: 1.8em; color: #00cc99; border-bottom: 2px solid #00cc99; margin-top: 40px; margin-bottom: 20px; padding-bottom: 10px; }
+    .stat-box { background: #222; padding: 20px; border-radius: 10px; text-align: center; border-left: 5px solid #00cc99; }
+    .stat-val { font-size: 2em; font-weight: bold; }
+    .stat-lbl { text-transform: uppercase; font-size: 0.7em; color: #aaa; }
+    </style>
+""", unsafe_allow_html=True)
+
+if 'manager' not in st.session_state: st.session_state.manager = ProjectManager()
+if 'auth' not in st.session_state: st.session_state.auth = AuthManager(st.session_state.manager)
+if 'view' not in st.session_state: st.session_state.view = 'dashboard'
+if 'selected_project_id' not in st.session_state: st.session_state.selected_project_id = None
+if 'selected_experiment_id' not in st.session_state: st.session_state.selected_experiment_id = None # NEU
+
+def nav_to(view, pid=None):
+    st.session_state.view = view
+    st.session_state.selected_project_id = pid
+    st.rerun()
+
+if not st.session_state.auth.check_login():
+    st.stop() 
+
+# --- SIDEBAR ---
+def render_sidebar():
+    st.sidebar.title("🏢 PM Suite")
+    user_name = st.session_state.auth.current_user_name()
+    st.sidebar.markdown(f"👤 **{user_name}**")
+    if st.sidebar.button("Logout", use_container_width=True):
+        st.session_state.auth.logout()
+    st.sidebar.markdown("---")
+    
+    # Inbox
+    my_open_tasks = []
+    for p in st.session_state.manager.projects:
+        if not p.get('is_deleted'):
+            for t in p.get('tasks', []):
+                if t.get('assignee') == user_name and t['status'] != 'Done':
+                    my_open_tasks.append((t, p))
+    if my_open_tasks:
+        with st.sidebar.expander(f"📬 {len(my_open_tasks)} Aufgaben", expanded=True):
+            for task, proj in my_open_tasks:
+                if st.button(f"👉 {task['text'][:15]}.. ({proj['title'][:5]}..)", key=f"nav_my_{task['id']}"):
+                    nav_to('details', proj['id'])
+
+    # Notifications
+    overdue_list = []
+    for p in st.session_state.manager.projects:
+        if not p.get('is_archived') and not p.get('is_deleted') and p.get('deadline'):
+            if calculate_days_left(p['deadline']) == "Überfällig": overdue_list.append(p)
+    if overdue_list:
+        st.sidebar.markdown(f'<div class="notification-box">🔔 {len(overdue_list)} Überfällig!</div>', unsafe_allow_html=True)
+        with st.sidebar.expander("Details"):
+            for p in overdue_list:
+                if st.button(f"🚨 {p['title']}", key=f"nav_ov_{p['id']}"): nav_to('details', p['id'])
+    
+    search_query = st.sidebar.text_input("🔍 Suche", placeholder="...")
+    if search_query:
+        st.session_state.search_query = search_query
+        if st.session_state.view != 'search': nav_to('search')
+
+    st.sidebar.markdown("---")
+    if st.sidebar.button("📊 Dashboard", use_container_width=True): nav_to('dashboard')
+    # NEU: Labor Button
+    if st.sidebar.button("🧪 Labor & Tests", use_container_width=True): nav_to('lab')
+    
+    if st.sidebar.button("🌍 Global View", use_container_width=True): nav_to('global')
+    if st.sidebar.button("➕ Projekt anlegen", use_container_width=True): nav_to('create')
+    
+    deleted_count = len([p for p in st.session_state.manager.projects if p.get('is_deleted')])
+    if st.sidebar.button(f"🗑 Papierkorb ({deleted_count})", use_container_width=True): nav_to('trash')
+
+    st.sidebar.markdown("---")
+    if st.session_state.view == 'details':
+        st.sidebar.caption(f"Projekt: {st.session_state.manager.get_project(st.session_state.selected_project_id)['title']}")
+        if st.sidebar.button("📢 Präsentation", type="primary", use_container_width=True):
+             nav_to('presentation', st.session_state.selected_project_id)
+
+# --- VIEWS ---
+
+def render_search_results():
+    st.title("🔍 Suchergebnisse")
+    query = st.session_state.get('search_query', '').lower()
+    if not query: return
+    hits = 0
+    for p in st.session_state.manager.projects:
+        if p.get('is_deleted'): continue
+        match = False
+        if query in p['title'].lower() or query in p['description'].lower(): match = True
+        else:
+            for t in p['tasks']:
+                if query in t['text'].lower(): match = True; break
+        if match:
+            hits += 1
+            st.markdown(f"**{p['title']}**")
+            if st.button("Zum Projekt", key=f"s_{p['id']}"): nav_to('details', p['id'])
+            st.divider()
+    if hits == 0: st.warning("Nichts gefunden.")
+
+def render_trash_bin():
+    st.title("🗑 Papierkorb")
+    deleted = [p for p in st.session_state.manager.projects if p.get('is_deleted')]
+    if not deleted: st.info("Leer."); return
+    for p in deleted:
+        c1, c2, c3 = st.columns([4,1,1])
+        c1.write(f"**{p['title']}**")
+        if c2.button("♻", key=f"res_{p['id']}"): st.session_state.manager.restore_project(p['id']); st.rerun()
+        if c3.button("🔥", key=f"kill_{p['id']}"): st.session_state.manager.delete_project_permanent(p['id']); st.rerun()
+
+def render_dashboard():
+    st.title("Executive Dashboard")
+    show_archived = st.checkbox("Zeige Archiv")
+    projects = [p for p in st.session_state.manager.projects if p.get('is_archived', False) == show_archived and not p.get('is_deleted')]
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Projekte", len(projects))
+    k2.metric("Budget", f"{sum(p['budget']['total'] for p in projects):,.0f} €")
+    k3.metric("Tasks", sum(len([t for t in p.get('tasks',[]) if t.get('status')!='Done']) for p in projects))
+    st.divider()
+    
+    cols = st.columns(3)
+    for idx, p in enumerate(projects):
+        with cols[idx % 3]:
+            with st.container():
+                st.markdown(f'<div class="card-container">', unsafe_allow_html=True)
+                if p['images'] and os.path.exists(p['images'][0]): st.image(p['images'][0], use_container_width=True)
+                st.markdown(f"### {p['title']}")
+                health, color = st.session_state.manager.calculate_health(p['id'])
+                st.markdown(f"<span class='health-badge-{color}'>{health}</span>", unsafe_allow_html=True)
+                st.caption(f"{p['category']} | {p['status']}")
+                st.progress(p['progress']/100)
+                if st.button("Open", key=f"b_{p['id']}", use_container_width=True): nav_to('details', p['id'])
+                st.markdown('</div>', unsafe_allow_html=True)
+
+def render_create():
+    st.title("Projektstart")
+    templates = [p for p in st.session_state.manager.projects if p.get('is_template') and not p.get('is_deleted')]
+    tmpl_name = st.selectbox("Vorlage", ["Leer"] + [p['title'] for p in templates])
+    with st.form("new_p"):
+        t = st.text_input("Titel")
+        if tmpl_name != "Leer":
+            if st.form_submit_button("Starten"):
+                src = next(p for p in templates if p['title'] == tmpl_name)
+                pid = st.session_state.manager.duplicate_project(src['id'], t)
+                nav_to('details', pid)
+        else:
+            c1, c2 = st.columns(2)
+            cat = c1.selectbox("Kat", ["IT", "Marketing", "HR", "R&D", "Privat"])
+            prio = c2.select_slider("Prio", ["Low", "Med", "High"], value="Med")
+            desc = st.text_area("Beschreibung")
+            git = st.text_input("Git")
+            dl = st.date_input("Deadline")
+            tags = st.text_input("Tags")
+            is_tmpl = st.checkbox("Als Vorlage?")
+            if st.form_submit_button("Erstellen"):
+                ts = [x.strip() for x in tags.split(",") if x.strip()]
+                pid = st.session_state.manager.add_project(t, desc, cat, prio, dl, git, ts, is_tmpl)
+                nav_to('details', pid)
+
+def render_details():
+    pid = st.session_state.selected_project_id
+    p = st.session_state.manager.get_project(pid)
+    if not p or p.get('is_deleted'): nav_to('dashboard'); return
+
+    c1, c2, c3 = st.columns([1, 8, 2])
+    c1.button("⬅", on_click=lambda: nav_to('dashboard'))
+    c2.title(p['title'])
+    if c3.button("📄 PDF"):
+        f = create_project_pdf(p)
+        if f: 
+            with open(f, "rb") as file: st.download_button("Download", file, f"{p['title']}.pdf")
+
+    tabs = st.tabs(["📋 Board", "👥 Team", "📅 Planung", "💰 Budget", "🧪 QA", "📄 Infos", "📈 Analyse", "🎯 Strat.", "🧠 Wissen", "🧩 Ext", "⚙️ Set"])
+
+    with tabs[0]: # Board
+        render_kanban_board(st.session_state.manager, pid, p)
+        with st.expander("➕ Task"):
+            c_t, c_a, c_b = st.columns([3, 2, 1])
+            nt = c_t.text_input("Task")
+            all_users = [u['name'] for u in st.session_state.manager.users]
+            assignee = c_a.selectbox("Wer?", ["Keine"] + all_users)
+            bb = c_b.selectbox("Blocker", ["None"] + [t['text'] for t in p['tasks']])
+            if st.button("Add"):
+                ass = assignee if assignee != "Keine" else None
+                blk = bb if bb != "None" else None
+                st.session_state.manager.add_task(pid, nt, blocked_by=blk, assignee=ass)
+                st.rerun()
+
+    with tabs[1]: render_team_view(st.session_state.manager, pid, p)
+    with tabs[2]:
+        render_calendar_view(st.session_state.manager, pid, p); st.divider()
+        c1, c2 = st.columns(2)
+        with c1: render_milestones_view(st.session_state.manager, pid, p)
+        with c2: render_time_tracking_view(st.session_state.manager, pid, p)
+        render_gantt_view(p)
+    with tabs[3]: render_budget_view(st.session_state.manager, pid, p)
+    with tabs[4]: render_qa_dashboard(st.session_state.manager, pid, p)
+    with tabs[5]:
+        c_g, c_s = st.columns([3, 1])
+        git = c_g.text_input("Git", value=p.get('git_url', ""))
+        if c_s.button("Sync"):
+            c = fetch_git_readme(git)
+            if c: st.session_state.manager.update_project(pid, {"git_url": git, "readme_content": c}); st.success("OK"); st.rerun()
+        if p.get('readme_content'): st.markdown(p['readme_content'])
+        else: st.write(p['description'])
+        st.divider(); render_docs_view(st.session_state.manager, pid, p)
+        st.divider()
+        with st.form("iu", clear_on_submit=True):
+            uf = st.file_uploader("Bilder", accept_multiple_files=True)
+            if st.form_submit_button("Upload") and uf:
+                for f in uf: st.session_state.manager.add_image(pid, save_uploaded_image(f, pid))
+                st.rerun()
+        render_gallery_view(st.session_state.manager, pid, p)
+    with tabs[6]: render_ai_assistant(st.session_state.manager, pid, p); st.divider(); render_burndown_chart(p); render_risk_view(st.session_state.manager, pid, p)
+    with tabs[7]: render_swot_analysis(st.session_state.manager, pid, p); st.divider(); render_okr_manager(st.session_state.manager, pid, p); st.divider(); render_retro_board(st.session_state.manager, pid, p)
+    with tabs[8]: render_wiki(st.session_state.manager, pid, p); st.divider(); render_backlog(st.session_state.manager, pid, p)
+    with tabs[9]: 
+        t = st.tabs(["Decisions", "Bugs", "Stakeholder", "Meetings", "Secrets"])
+        with t[0]: render_decision_log(st.session_state.manager, pid, p)
+        with t[1]: render_bug_tracker(st.session_state.manager, pid, p)
+        with t[2]: render_stakeholder_view(st.session_state.manager, pid, p)
+        with t[3]: render_meeting_log(st.session_state.manager, pid, p)
+        with t[4]: render_secret_safe(st.session_state.manager, pid, p)
+    with tabs[10]:
+        curr_tags = ", ".join(p.get('tags', []))
+        nt = st.text_input("Tags", value=curr_tags)
+        if st.button("Update Tags"): st.session_state.manager.update_project(pid, {"tags": [x.strip() for x in nt.split(",")]}); st.rerun()
+        if st.button("Papierkorb", type="primary"): st.session_state.manager.soft_delete_project(pid); nav_to('dashboard')
+        render_activity_log(p)
+
+def render_presentation(pid):
+    p = st.session_state.manager.get_project(pid)
+    st.button("❌ Close", on_click=lambda: nav_to('details', pid))
+    st.markdown(f'<div class="slide-title">{p["title"]}</div>', unsafe_allow_html=True)
+    if p['images'] and os.path.exists(p['images'][0]): st.image(p['images'][0])
+    k1, k2 = st.columns(2); k1.metric("Progress", f"{p['progress']}%"); k2.metric("Budget", f"{p['budget']['total']}€")
+    render_gantt_view(p)
+
+# --- RUN ---
+render_sidebar()
+if st.session_state.view == 'dashboard': render_dashboard()
+elif st.session_state.view == 'create': render_create()
+elif st.session_state.view == 'global': render_global_dashboard(st.session_state.manager)
+elif st.session_state.view == 'details': render_details()
+elif st.session_state.view == 'search': render_search_results()
+elif st.session_state.view == 'trash': render_trash_bin()
+elif st.session_state.view == 'presentation': render_presentation(st.session_state.selected_project_id)
+elif st.session_state.view == 'lab': render_lab_dashboard(st.session_state.manager) # NEU
+elif st.session_state.view == 'experiment_details': render_experiment_details(st.session_state.manager) # NEU
