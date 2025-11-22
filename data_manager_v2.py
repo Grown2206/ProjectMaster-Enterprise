@@ -136,6 +136,83 @@ class ProjectManager(DataManager):
         self.projects = self._load_data()
         self._migrate_legacy_data()
 
+        # User management
+        self.users_file = DataPaths.DATA_DIR / "users_data.json"
+        self.users = self._load_users()
+
+        # Experiments management
+        self.experiments_file = DataPaths.DATA_DIR / "experiments_data.json"
+        self.experiments = self._load_experiments()
+
+    def _load_users(self) -> List[Dict]:
+        """Load users from JSON file"""
+        try:
+            if not self.users_file.exists():
+                default_users = [
+                    {
+                        "username": "admin",
+                        "password": "123",
+                        "role": "Admin",
+                        "name": "Administrator"
+                    }
+                ]
+                self.users_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.users_file, 'w', encoding='utf-8') as f:
+                    json.dump(default_users, f, indent=4)
+                return default_users
+
+            with open(self.users_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading users: {str(e)}")
+            return [{"username": "admin", "password": "123", "role": "Admin", "name": "Administrator"}]
+
+    def _save_users(self):
+        """Save users to JSON file"""
+        try:
+            with open(self.users_file, 'w', encoding='utf-8') as f:
+                json.dump(self.users, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Error saving users: {str(e)}")
+
+    def add_user(self, username: str, password: str, role: str, name: str) -> bool:
+        """Add new user"""
+        if any(u['username'] == username for u in self.users):
+            return False
+
+        self.users.append({
+            "username": username,
+            "password": password,
+            "role": role,
+            "name": name
+        })
+        self._save_users()
+        audit_logger.info(f"User created: {username} (role: {role})")
+        return True
+
+    def _load_experiments(self) -> List[Dict]:
+        """Load experiments from JSON file"""
+        try:
+            if not self.experiments_file.exists():
+                self.experiments_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.experiments_file, 'w', encoding='utf-8') as f:
+                    json.dump([], f, indent=4)
+                return []
+
+            with open(self.experiments_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading experiments: {str(e)}")
+            return []
+
+    def save_experiments(self):
+        """Save experiments to JSON file"""
+        try:
+            with open(self.experiments_file, 'w', encoding='utf-8') as f:
+                json.dump(self.experiments, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Error saving experiments: {str(e)}")
+
     def _migrate_legacy_data(self):
         """Migrate legacy project data to new format"""
         try:
@@ -717,6 +794,111 @@ class ProjectManager(DataManager):
 
     # ... Additional methods for risks, team, milestones, etc. follow the same pattern ...
     # (Implementation continues but truncated for brevity)
+
+    # --- EXPERIMENT MANAGEMENT ---
+
+    def add_experiment(self, name: str, description: str, category: str,
+                      tester: str, project_id: Optional[str] = None) -> str:
+        """Add new experiment"""
+        try:
+            experiment = {
+                "id": str(uuid.uuid4()),
+                "name": name,
+                "description": description,
+                "category": category,
+                "tester": tester,
+                "project_id": project_id,
+                "created_at": datetime.now().strftime("%Y-%m-%d"),
+                "status": "Geplant",
+                "samples": [],
+                "matrix_columns": ["Ergebnis"],
+                "matrix_data": [],
+                "images": [],
+                "result_summary": "",
+                "conclusion": "Offen"
+            }
+
+            self.experiments.append(experiment)
+            self.save_experiments()
+            logger.info(f"Experiment created: {name}")
+            return experiment["id"]
+
+        except Exception as e:
+            logger.error(f"Error creating experiment: {str(e)}")
+            return None
+
+    def get_experiment(self, exp_id: str) -> Optional[Dict]:
+        """Get experiment by ID"""
+        return next((e for e in self.experiments if e["id"] == exp_id), None)
+
+    def update_experiment_matrix(self, exp_id: str, samples: List[Dict],
+                                columns: List[str], data: List[Dict]):
+        """Update experiment matrix structure and data"""
+        try:
+            for exp in self.experiments:
+                if exp["id"] == exp_id:
+                    exp["samples"] = samples
+                    exp["matrix_columns"] = columns
+                    exp["matrix_data"] = data
+                    exp["status"] = "Laufend"
+                    self.save_experiments()
+                    logger.info(f"Experiment matrix updated: {exp_id}")
+                    return
+
+        except Exception as e:
+            logger.error(f"Error updating experiment matrix: {str(e)}")
+
+    def update_experiment_meta(self, exp_id: str, summary: str,
+                              conclusion: str, status: str):
+        """Update experiment metadata"""
+        try:
+            for exp in self.experiments:
+                if exp["id"] == exp_id:
+                    exp["result_summary"] = summary
+                    exp["conclusion"] = conclusion
+                    exp["status"] = status
+                    self.save_experiments()
+                    logger.info(f"Experiment meta updated: {exp_id}")
+                    return
+
+        except Exception as e:
+            logger.error(f"Error updating experiment meta: {str(e)}")
+
+    def add_experiment_image(self, exp_id: str, path: str, caption: str = ""):
+        """Add image to experiment"""
+        try:
+            for exp in self.experiments:
+                if exp["id"] == exp_id:
+                    exp["images"].append({"path": path, "caption": caption})
+                    self.save_experiments()
+                    logger.info(f"Image added to experiment: {exp_id}")
+                    return
+
+        except Exception as e:
+            logger.error(f"Error adding experiment image: {str(e)}")
+
+    def delete_experiment_image(self, exp_id: str, idx: int):
+        """Delete experiment image"""
+        try:
+            for exp in self.experiments:
+                if exp["id"] == exp_id:
+                    del exp["images"][idx]
+                    self.save_experiments()
+                    logger.info(f"Image deleted from experiment: {exp_id}")
+                    return
+
+        except Exception as e:
+            logger.error(f"Error deleting experiment image: {str(e)}")
+
+    def delete_experiment(self, exp_id: str):
+        """Delete experiment"""
+        try:
+            self.experiments = [e for e in self.experiments if e["id"] != exp_id]
+            self.save_experiments()
+            logger.info(f"Experiment deleted: {exp_id}")
+
+        except Exception as e:
+            logger.error(f"Error deleting experiment: {str(e)}")
 
 
 # Singleton instance
