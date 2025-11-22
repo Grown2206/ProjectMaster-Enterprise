@@ -4,7 +4,8 @@ import pandas as pd
 from data_manager import ProjectManager
 from auth_manager import AuthManager
 from utils import calculate_days_left, save_uploaded_image, save_uploaded_doc, fetch_git_readme, parse_csv_tasks
-# Module
+
+# Existing modules
 from kanban_board import render_kanban_board
 from ai_assistant import render_ai_assistant
 from global_dashboard import render_global_dashboard
@@ -15,22 +16,43 @@ from strategy_tools import *
 from knowledge_base import *
 from qa_module import render_qa_dashboard
 from calendar_module import render_calendar_view
-# NEU Phase 6: Experimente
 from experiment_module import render_lab_dashboard, render_experiment_details
 
+# NEW FEATURES v2.1 - 10 Amazing Additions!
+from analytics_dashboard import render_analytics_dashboard
+from export_import import render_export_import_center
+from notification_center import render_notification_center, render_notification_badge
+from templates_library import render_template_library, render_template_creation
+from time_tracking_pro import render_timesheet_manager
+from advanced_search import render_advanced_search
+from sprint_management import render_sprint_management
+from dashboard_widgets import render_custom_dashboard
+from automation_engine import render_automation_center, execute_automation_rules
+from theme_manager import render_theme_settings, apply_theme, get_theme_css
+
 # --- SETUP ---
-st.set_page_config(page_title="Project Master Enterprise", page_icon="🏢", layout="wide")
+st.set_page_config(
+    page_title="Project Master Enterprise v2.1",
+    page_icon="🏢",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Apply theme
+apply_theme()
+
+st.markdown(get_theme_css(), unsafe_allow_html=True)
 
 st.markdown("""
     <style>
-    .card-container { background-color: #1e1e1e; border: 1px solid #333; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; }
-    .card-container:hover { border-color: #00cc99; transform: translateY(-3px); }
+    .card-container { background-color: #1e1e1e; border: 1px solid #333; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; transition: all 0.3s ease; }
+    .card-container:hover { border-color: #00cc99; transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0, 204, 153, 0.3); }
     .notification-box { background-color: #ff4b4b; color: white; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
     .tag-span { background-color: #333; color: #eee; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; margin-right: 5px; }
     .health-badge-green { color: #00cc99; font-weight: bold; border: 1px solid #00cc99; padding: 2px 8px; border-radius: 8px; }
     .health-badge-orange { color: orange; font-weight: bold; border: 1px solid orange; padding: 2px 8px; border-radius: 8px; }
     .health-badge-red { color: #ff4b4b; font-weight: bold; border: 1px solid #ff4b4b; padding: 2px 8px; border-radius: 8px; }
-    
+
     /* Presentation Styles */
     .slide-container { padding: 40px; background: #111; border-radius: 20px; margin-bottom: 50px; border: 1px solid #333; }
     .slide-title { font-size: 3.5em; font-weight: 900; background: -webkit-linear-gradient(#eee, #555); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 10px; }
@@ -38,6 +60,9 @@ st.markdown("""
     .stat-box { background: #222; padding: 20px; border-radius: 10px; text-align: center; border-left: 5px solid #00cc99; }
     .stat-val { font-size: 2em; font-weight: bold; }
     .stat-lbl { text-transform: uppercase; font-size: 0.7em; color: #aaa; }
+
+    /* NEW: Feature badges */
+    .feature-badge { background: linear-gradient(135deg, #00cc99 0%, #0099cc 100%); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.75em; margin-left: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -55,15 +80,21 @@ def nav_to(view, pid=None):
 if not st.session_state.auth.check_login():
     st.stop() 
 
+# Execute automation rules
+execute_automation_rules(st.session_state.manager)
+
 # --- SIDEBAR ---
 def render_sidebar():
-    st.sidebar.title("🏢 PM Suite")
+    st.sidebar.title("🏢 PM Suite v2.1")
     user_name = st.session_state.auth.current_user_name()
     st.sidebar.markdown(f"👤 **{user_name}**")
     if st.sidebar.button("Logout", use_container_width=True):
         st.session_state.auth.logout()
     st.sidebar.markdown("---")
-    
+
+    # NEW: Notification Badge
+    render_notification_badge(st.session_state.manager, user_name)
+
     # Inbox
     my_open_tasks = []
     for p in st.session_state.manager.projects:
@@ -72,37 +103,46 @@ def render_sidebar():
                 if t.get('assignee') == user_name and t['status'] != 'Done':
                     my_open_tasks.append((t, p))
     if my_open_tasks:
-        with st.sidebar.expander(f"📬 {len(my_open_tasks)} Aufgaben", expanded=True):
-            for task, proj in my_open_tasks:
+        with st.sidebar.expander(f"📬 {len(my_open_tasks)} Aufgaben", expanded=False):
+            for task, proj in my_open_tasks[:5]:
                 if st.button(f"👉 {task['text'][:15]}.. ({proj['title'][:5]}..)", key=f"nav_my_{task['id']}"):
                     nav_to('details', proj['id'])
 
-    # Notifications
-    overdue_list = []
-    for p in st.session_state.manager.projects:
-        if not p.get('is_archived') and not p.get('is_deleted') and p.get('deadline'):
-            if calculate_days_left(p['deadline']) == "Überfällig": overdue_list.append(p)
-    if overdue_list:
-        st.sidebar.markdown(f'<div class="notification-box">🔔 {len(overdue_list)} Überfällig!</div>', unsafe_allow_html=True)
-        with st.sidebar.expander("Details"):
-            for p in overdue_list:
-                if st.button(f"🚨 {p['title']}", key=f"nav_ov_{p['id']}"): nav_to('details', p['id'])
-    
-    search_query = st.sidebar.text_input("🔍 Suche", placeholder="...")
-    if search_query:
-        st.session_state.search_query = search_query
-        if st.session_state.view != 'search': nav_to('search')
+    st.sidebar.markdown("---")
+
+    # Main Navigation
+    st.sidebar.markdown("### 📍 Navigation")
+    if st.sidebar.button("📊 My Dashboard", use_container_width=True): nav_to('my_dashboard')
+    if st.sidebar.button("📈 Analytics", use_container_width=True): nav_to('analytics')
+    if st.sidebar.button("🔍 Advanced Search", use_container_width=True): nav_to('advanced_search')
 
     st.sidebar.markdown("---")
-    if st.sidebar.button("📊 Dashboard", use_container_width=True): nav_to('dashboard')
-    # NEU: Labor Button
-    if st.sidebar.button("🧪 Labor & Tests", use_container_width=True): nav_to('lab')
-    
-    if st.sidebar.button("🌍 Global View", use_container_width=True): nav_to('global')
+
+    # Projects
+    st.sidebar.markdown("### 📁 Projekte")
     if st.sidebar.button("➕ Projekt anlegen", use_container_width=True): nav_to('create')
-    
+    if st.sidebar.button("📚 Aus Template", use_container_width=True): nav_to('template_library')
+    if st.sidebar.button("🌍 Global View", use_container_width=True): nav_to('global')
+
+    st.sidebar.markdown("---")
+
+    # NEW Features
+    st.sidebar.markdown("### ✨ Features")
+    if st.sidebar.button("⏱️ Time Tracking", use_container_width=True): nav_to('timesheet')
+    if st.sidebar.button("⚡ Sprint Management", use_container_width=True): nav_to('sprints')
+    if st.sidebar.button("🧪 Labor & Tests", use_container_width=True): nav_to('lab')
+    if st.sidebar.button("🤖 Automation", use_container_width=True): nav_to('automation')
+
+    st.sidebar.markdown("---")
+
+    # Tools
+    st.sidebar.markdown("### 🛠️ Tools")
+    if st.sidebar.button("📦 Export/Import", use_container_width=True): nav_to('export_import')
+
     deleted_count = len([p for p in st.session_state.manager.projects if p.get('is_deleted')])
     if st.sidebar.button(f"🗑 Papierkorb ({deleted_count})", use_container_width=True): nav_to('trash')
+
+    if st.sidebar.button("🎨 Theme Settings", use_container_width=True): nav_to('theme_settings')
 
     st.sidebar.markdown("---")
     if st.session_state.view == 'details':
@@ -271,6 +311,8 @@ def render_presentation(pid):
 
 # --- RUN ---
 render_sidebar()
+
+# Original Views
 if st.session_state.view == 'dashboard': render_dashboard()
 elif st.session_state.view == 'create': render_create()
 elif st.session_state.view == 'global': render_global_dashboard(st.session_state.manager)
@@ -278,5 +320,28 @@ elif st.session_state.view == 'details': render_details()
 elif st.session_state.view == 'search': render_search_results()
 elif st.session_state.view == 'trash': render_trash_bin()
 elif st.session_state.view == 'presentation': render_presentation(st.session_state.selected_project_id)
-elif st.session_state.view == 'lab': render_lab_dashboard(st.session_state.manager) # NEU
-elif st.session_state.view == 'experiment_details': render_experiment_details(st.session_state.manager) # NEU
+elif st.session_state.view == 'lab': render_lab_dashboard(st.session_state.manager)
+elif st.session_state.view == 'experiment_details': render_experiment_details(st.session_state.manager)
+
+# NEW v2.1 Views - 10 Amazing Features!
+elif st.session_state.view == 'my_dashboard': render_custom_dashboard(st.session_state.manager, st.session_state.auth.current_user_name())
+elif st.session_state.view == 'analytics': render_analytics_dashboard(st.session_state.manager)
+elif st.session_state.view == 'export_import': render_export_import_center(st.session_state.manager)
+elif st.session_state.view == 'notifications': render_notification_center(st.session_state.manager, st.session_state.auth.current_user_name())
+elif st.session_state.view == 'template_library': render_template_library(st.session_state.manager)
+elif st.session_state.view == 'template_create':
+    if 'selected_template' in st.session_state:
+        render_template_creation(st.session_state.manager, st.session_state['selected_template'])
+elif st.session_state.view == 'timesheet': render_timesheet_manager(st.session_state.manager, st.session_state.auth.current_user_name())
+elif st.session_state.view == 'advanced_search': render_advanced_search(st.session_state.manager)
+elif st.session_state.view == 'sprints': render_sprint_management(st.session_state.manager)
+elif st.session_state.view == 'automation': render_automation_center(st.session_state.manager)
+elif st.session_state.view == 'theme_settings': render_theme_settings()
+
+# Default fallback
+else: render_dashboard()
+
+# Footer with version info
+st.sidebar.markdown("---")
+st.sidebar.caption("v2.1 - 10 New Features!")
+st.sidebar.caption("Made with ❤️ by PM Team")
