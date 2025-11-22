@@ -44,6 +44,9 @@ from version_control import render_version_control
 from dependency_manager import render_dependency_manager
 from calendar_export import render_calendar_export
 
+# NEW FEATURES v2.3.1 - Overview Dashboard with Preview Images!
+from overview_dashboard import render_overview_dashboard
+
 # --- SETUP ---
 st.set_page_config(
     page_title="Project Master Enterprise v2.1",
@@ -126,6 +129,7 @@ def render_sidebar():
 
     # Main Navigation
     st.sidebar.markdown("### 📍 Navigation")
+    if st.sidebar.button("🎯 Übersicht Dashboard", use_container_width=True): nav_to('overview')
     if st.sidebar.button("📊 My Dashboard", use_container_width=True): nav_to('my_dashboard')
     if st.sidebar.button("📈 Analytics", use_container_width=True): nav_to('analytics')
     if st.sidebar.button("🔍 Advanced Search", use_container_width=True): nav_to('advanced_search')
@@ -384,6 +388,9 @@ elif st.session_state.view == 'mind_map': render_mind_map_view(st.session_state.
 elif st.session_state.view == 'version_control': render_version_control(st.session_state.manager, st.session_state.auth.current_user_name())
 elif st.session_state.view == 'dependencies': render_dependency_manager(st.session_state.manager)
 elif st.session_state.view == 'calendar_export': render_calendar_export(st.session_state.manager)
+
+# NEW v2.3.1 Views - Overview Dashboard!
+elif st.session_state.view == 'overview': render_overview_dashboard(st.session_state.manager)
 
 # Default fallback
 else: render_dashboard()

@@ -41,7 +41,8 @@ def render_global_dashboard(manager):
         
         if all_risks:
             df_risk = pd.DataFrame(all_risks).sort_values("Score", ascending=False)
-            st.dataframe(df_risk.style.background_gradient(cmap='Reds', subset=['Score']), use_container_width=True)
+            # Use simple dataframe without matplotlib styling
+            st.dataframe(df_risk, use_container_width=True)
         else:
             st.success("Keine kritischen Risiken.")
 
