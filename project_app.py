@@ -31,6 +31,13 @@ from automation_engine import render_automation_center, execute_automation_rules
 from theme_manager import render_theme_settings, apply_theme, get_theme_css
 from experiment_templates import render_experiment_template_library, render_create_from_experiment_template
 
+# NEW FEATURES v2.2 - 5 Game-Changing Additions!
+from achievement_system import render_achievement_center, track_feature_access
+from invoice_generator import render_invoice_generator
+from resource_manager import render_resource_manager
+from gantt_chart import render_gantt_chart_view
+from comments_system import render_comment_notifications, render_comments_section, CommentsSystem
+
 # --- SETUP ---
 st.set_page_config(
     page_title="Project Master Enterprise v2.1",
@@ -140,11 +147,24 @@ def render_sidebar():
     # Tools
     st.sidebar.markdown("### 🛠️ Tools")
     if st.sidebar.button("📦 Export/Import", use_container_width=True): nav_to('export_import')
+    if st.sidebar.button("📊 Gantt Chart", use_container_width=True): nav_to('gantt_chart')
 
     deleted_count = len([p for p in st.session_state.manager.projects if p.get('is_deleted')])
     if st.sidebar.button(f"🗑 Papierkorb ({deleted_count})", use_container_width=True): nav_to('trash')
 
     if st.sidebar.button("🎨 Theme Settings", use_container_width=True): nav_to('theme_settings')
+
+    st.sidebar.markdown("---")
+
+    # NEW v2.2: Business & Collaboration
+    st.sidebar.markdown("### 💼 Business")
+    if st.sidebar.button("💰 Invoices", use_container_width=True): nav_to('invoices')
+    if st.sidebar.button("📦 Resources", use_container_width=True): nav_to('resources')
+    if st.sidebar.button("💬 Comments", use_container_width=True):
+        CommentsSystem.initialize_session_state()
+        unread = CommentsSystem.get_unread_mentions(st.session_state.auth.current_user_name())
+        nav_to('comment_notifications')
+    if st.sidebar.button("🏆 Achievements", use_container_width=True): nav_to('achievements')
 
     st.sidebar.markdown("---")
     if st.session_state.view == 'details':
@@ -342,10 +362,17 @@ elif st.session_state.view == 'sprints': render_sprint_management(st.session_sta
 elif st.session_state.view == 'automation': render_automation_center(st.session_state.manager)
 elif st.session_state.view == 'theme_settings': render_theme_settings()
 
+# NEW v2.2 Views - 5 Game-Changing Features!
+elif st.session_state.view == 'achievements': render_achievement_center(st.session_state.manager, st.session_state.auth.current_user_name())
+elif st.session_state.view == 'invoices': render_invoice_generator(st.session_state.manager)
+elif st.session_state.view == 'resources': render_resource_manager(st.session_state.manager)
+elif st.session_state.view == 'gantt_chart': render_gantt_chart_view(st.session_state.manager)
+elif st.session_state.view == 'comment_notifications': render_comment_notifications(st.session_state.auth.current_user_name())
+
 # Default fallback
 else: render_dashboard()
 
 # Footer with version info
 st.sidebar.markdown("---")
-st.sidebar.caption("v2.1 - 10 New Features!")
+st.sidebar.caption("v2.2 - 15 Amazing Features!")
 st.sidebar.caption("Made with ❤️ by PM Team")
