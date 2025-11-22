@@ -38,6 +38,12 @@ from resource_manager import render_resource_manager
 from gantt_chart import render_gantt_chart_view
 from comments_system import render_comment_notifications, render_comments_section, CommentsSystem
 
+# NEW FEATURES v2.3 - 4 Advanced Additions!
+from mind_map_visualizer import render_mind_map_view
+from version_control import render_version_control
+from dependency_manager import render_dependency_manager
+from calendar_export import render_calendar_export
+
 # --- SETUP ---
 st.set_page_config(
     page_title="Project Master Enterprise v2.1",
@@ -148,6 +154,10 @@ def render_sidebar():
     st.sidebar.markdown("### 🛠️ Tools")
     if st.sidebar.button("📦 Export/Import", use_container_width=True): nav_to('export_import')
     if st.sidebar.button("📊 Gantt Chart", use_container_width=True): nav_to('gantt_chart')
+    if st.sidebar.button("🗺️ Mind Map", use_container_width=True): nav_to('mind_map')
+    if st.sidebar.button("📜 Version Control", use_container_width=True): nav_to('version_control')
+    if st.sidebar.button("🔗 Dependencies", use_container_width=True): nav_to('dependencies')
+    if st.sidebar.button("📅 Calendar Export", use_container_width=True): nav_to('calendar_export')
 
     deleted_count = len([p for p in st.session_state.manager.projects if p.get('is_deleted')])
     if st.sidebar.button(f"🗑 Papierkorb ({deleted_count})", use_container_width=True): nav_to('trash')
@@ -369,10 +379,16 @@ elif st.session_state.view == 'resources': render_resource_manager(st.session_st
 elif st.session_state.view == 'gantt_chart': render_gantt_chart_view(st.session_state.manager)
 elif st.session_state.view == 'comment_notifications': render_comment_notifications(st.session_state.auth.current_user_name())
 
+# NEW v2.3 Views - 4 Advanced Features!
+elif st.session_state.view == 'mind_map': render_mind_map_view(st.session_state.manager)
+elif st.session_state.view == 'version_control': render_version_control(st.session_state.manager, st.session_state.auth.current_user_name())
+elif st.session_state.view == 'dependencies': render_dependency_manager(st.session_state.manager)
+elif st.session_state.view == 'calendar_export': render_calendar_export(st.session_state.manager)
+
 # Default fallback
 else: render_dashboard()
 
 # Footer with version info
 st.sidebar.markdown("---")
-st.sidebar.caption("v2.2 - 15 Amazing Features!")
+st.sidebar.caption("v2.3 - 19 Amazing Features!")
 st.sidebar.caption("Made with ❤️ by PM Team")
