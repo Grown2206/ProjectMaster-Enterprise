@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  projectmaster:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: projectmaster-enterprise
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount data directory to persist data
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+      - ./project_images:/app/project_images
+      - ./project_docs:/app/project_docs
+    environment:
+      - APP_NAME=ProjectMaster Enterprise
+      - APP_VERSION=2.0.0
+      - APP_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key}
+      - DATABASE_TYPE=json
+      - DATABASE_PATH=/app/data
+      - LOG_LEVEL=INFO
+      - ENABLE_BACKUP=true
+    restart: unless-stopped
+    networks:
+      - projectmaster-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: PostgreSQL database (für zukünftige Versionen)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: projectmaster-db
+  #   environment:
+  #     POSTGRES_DB: projectmaster
+  #     POSTGRES_USER: pmuser
+  #     POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - projectmaster-network
+  #   restart: unless-stopped
+
+networks:
+  projectmaster-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

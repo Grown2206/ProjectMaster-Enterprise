@@ -1,31 +1,99 @@
-Virtuelle Umgebung ignorieren
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-.venv/
+# Virtual Environment
 venv/
+ENV/
 env/
+.venv
 
-Python Cache
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
 
-pycache/
-*.pyc
+# Streamlit
+.streamlit/
+.streamlit/secrets.toml
 
-Daten ignorieren (WICHTIG: Damit keine Passwörter/Kundendaten hochladen!)
+# Environment Variables
+.env
+.env.local
+.env.*.local
 
+# Data Files (WICHTIG: Keine Passwörter/Kundendaten hochladen!)
+*.json
+!config.example.json
+*.db
+*.sqlite
+*.sqlite3
 projects_data.json
 users_data.json
 experiments_data.json
 
-Medien-Ordner ignorieren (optional, wenn sie sehr groß sind)
+# Data & Backup Directories
+data/
+backups/
 
-Wenn du Beispielbilder im Repo willst, entferne diese Zeilen
-
+# Uploads & Media
 project_images/
 project_docs/
+uploads/
+temp/
 
-Streamlit Secrets & Config
+# Logs
+*.log
+logs/
 
-.streamlit/secrets.toml
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
 
-VS Code Settings (optional)
+# Jupyter Notebooks
+.ipynb_checkpoints
 
-.vscode/
+# Documentation
+docs/_build/
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# PDF Reports
+*.pdf
+
+# Temporary files
+*.tmp
