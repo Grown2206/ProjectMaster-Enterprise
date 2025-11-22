@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Data (wird über Volumes gemountet)
+data/
+logs/
+uploads/
+project_images/
+project_docs/
+
+# Environment
+.env
+.env.local
+
+# Documentation
+README.md
+CHANGELOG.md
+docs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
