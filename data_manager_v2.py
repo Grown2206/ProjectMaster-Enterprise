@@ -8,7 +8,7 @@ import os
 import uuid
 import shutil
 from datetime import datetime
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from pathlib import Path
 
 from config import Config, DataPaths
@@ -187,7 +187,7 @@ class ProjectManager(DataManager):
             "name": name
         })
         self._save_users()
-        audit_logger.info(f"User created: {username} (role: {role})")
+        audit_logger.log_user_action("system", f"User created: {username}", {"role": role, "name": name})
         return True
 
     def _load_experiments(self) -> List[Dict]:
@@ -794,6 +794,647 @@ class ProjectManager(DataManager):
 
     # ... Additional methods for risks, team, milestones, etc. follow the same pattern ...
     # (Implementation continues but truncated for brevity)
+
+    # --- ADDITIONAL PROJECT METHODS ---
+
+    def log_activity(self, project_id: str, action: str, user: str = "System"):
+        """Log activity to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                if 'activity_log' not in project:
+                    project['activity_log'] = []
+
+                project['activity_log'].append({
+                    "action": action,
+                    "user": user,
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
+                self.save()
+        except Exception as e:
+            logger.error(f"Error logging activity: {str(e)}")
+
+    def calculate_health(self, project_id: str) -> Tuple[str, int]:
+        """Calculate project health"""
+        try:
+            project = self.get_project(project_id)
+            if not project:
+                return ("Unknown", 0)
+
+            score = 100
+
+            # Deadline check
+            if project.get('deadline'):
+                try:
+                    deadline = datetime.strptime(project['deadline'], "%Y-%m-%d")
+                    days_left = (deadline - datetime.now()).days
+                    if days_left < 0:
+                        score -= 30
+                    elif days_left < 7:
+                        score -= 20
+                except:
+                    pass
+
+            # Budget check
+            budget = project.get('budget', {})
+            total = budget.get('total', 0)
+            spent = sum(e.get('amount', 0) for e in budget.get('expenses', []))
+            if total > 0 and spent > total:
+                score -= 20
+
+            # Task completion
+            tasks = project.get('tasks', [])
+            if tasks:
+                completed = len([t for t in tasks if t.get('status') == 'Done'])
+                completion_rate = (completed / len(tasks)) * 100
+                if completion_rate < 30:
+                    score -= 20
+
+            # Health status
+            if score >= 80:
+                return ("Gesund", score)
+            elif score >= 50:
+                return ("Moderat", score)
+            else:
+                return ("Kritisch", score)
+
+        except Exception as e:
+            logger.error(f"Error calculating health: {str(e)}")
+            return ("Unknown", 0)
+
+    def soft_delete_project(self, project_id: str):
+        """Soft delete project"""
+        self.update_project(project_id, {"is_deleted": True})
+        logger.info(f"Project soft deleted: {project_id}")
+
+    def restore_project(self, project_id: str):
+        """Restore soft-deleted project"""
+        self.update_project(project_id, {"is_deleted": False})
+        logger.info(f"Project restored: {project_id}")
+
+    def delete_project_permanent(self, project_id: str):
+        """Permanently delete project"""
+        self.projects = [p for p in self.projects if p['id'] != project_id]
+        self.save()
+        logger.info(f"Project permanently deleted: {project_id}")
+
+    def duplicate_project(self, template_id: str, new_title: str) -> Optional[str]:
+        """Duplicate project"""
+        try:
+            template = self.get_project(template_id)
+            if not template:
+                return None
+
+            new_project = template.copy()
+            new_project['id'] = str(uuid.uuid4())
+            new_project['title'] = new_title
+            new_project['created_at'] = datetime.now().strftime("%Y-%m-%d")
+            new_project['is_template'] = False
+            new_project['progress'] = 0
+            new_project['status'] = 'Idee'
+
+            self.projects.append(new_project)
+            self.save()
+
+            logger.info(f"Project duplicated: {new_title}")
+            return new_project['id']
+
+        except Exception as e:
+            logger.error(f"Error duplicating project: {str(e)}")
+            return None
+
+    # --- TASK MANAGEMENT ---
+
+    def add_task(self, project_id: str, text: str, blocked_by: str = None, assignee: str = None):
+        """Add task to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                task = {
+                    "id": str(uuid.uuid4()),
+                    "text": text,
+                    "status": "To Do",
+                    "assignee": assignee,
+                    "comments": []
+                }
+                project['tasks'].append(task)
+                self.save()
+                self.log_activity(project_id, f"Task added: {text}")
+        except Exception as e:
+            logger.error(f"Error adding task: {str(e)}")
+
+    def update_task_status(self, project_id: str, task_id: str, status: str):
+        """Update task status"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                for task in project['tasks']:
+                    if task['id'] == task_id:
+                        task['status'] = status
+                        self.save()
+                        self.log_activity(project_id, f"Task status updated: {task['text']} -> {status}")
+                        break
+        except Exception as e:
+            logger.error(f"Error updating task status: {str(e)}")
+
+    def delete_task_by_id(self, project_id: str, task_id: str):
+        """Delete task by ID"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['tasks'] = [t for t in project['tasks'] if t['id'] != task_id]
+                self.save()
+                self.log_activity(project_id, f"Task deleted")
+        except Exception as e:
+            logger.error(f"Error deleting task: {str(e)}")
+
+    def add_task_comment(self, project_id: str, task_id: str, comment: str):
+        """Add comment to task"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                for task in project['tasks']:
+                    if task['id'] == task_id:
+                        if 'comments' not in task:
+                            task['comments'] = []
+                        task['comments'].append({
+                            "text": comment,
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        })
+                        self.save()
+                        break
+        except Exception as e:
+            logger.error(f"Error adding task comment: {str(e)}")
+
+    # --- IMAGE MANAGEMENT ---
+
+    def add_image(self, project_id: str, path: str):
+        """Add image to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['images'].append(path)
+                self.save()
+                self.log_activity(project_id, "Image added")
+        except Exception as e:
+            logger.error(f"Error adding image: {str(e)}")
+
+    def delete_image(self, project_id: str, index: int):
+        """Delete image from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['images']):
+                del project['images'][index]
+                self.save()
+                self.log_activity(project_id, "Image deleted")
+        except Exception as e:
+            logger.error(f"Error deleting image: {str(e)}")
+
+    def delete_all_images(self, project_id: str):
+        """Delete all images from project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['images'] = []
+                self.save()
+                self.log_activity(project_id, "All images deleted")
+        except Exception as e:
+            logger.error(f"Error deleting all images: {str(e)}")
+
+    # --- DOCUMENT MANAGEMENT ---
+
+    def add_document(self, project_id: str, name: str, path: str):
+        """Add document to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['documents'].append({"name": name, "path": path})
+                self.save()
+                self.log_activity(project_id, f"Document added: {name}")
+        except Exception as e:
+            logger.error(f"Error adding document: {str(e)}")
+
+    def delete_document(self, project_id: str, index: int):
+        """Delete document from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['documents']):
+                del project['documents'][index]
+                self.save()
+                self.log_activity(project_id, "Document deleted")
+        except Exception as e:
+            logger.error(f"Error deleting document: {str(e)}")
+
+    # --- BUDGET MANAGEMENT ---
+
+    def set_budget_total(self, project_id: str, value: float):
+        """Set total budget"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['budget']['total'] = value
+                self.save()
+                self.log_activity(project_id, f"Budget set: {value}")
+        except Exception as e:
+            logger.error(f"Error setting budget: {str(e)}")
+
+    # --- RISK MANAGEMENT ---
+
+    def add_risk(self, project_id: str, desc: str, prob: int, impact: int):
+        """Add risk to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['risks'].append({"desc": desc, "prob": prob, "impact": impact})
+                self.save()
+                self.log_activity(project_id, f"Risk added: {desc}")
+        except Exception as e:
+            logger.error(f"Error adding risk: {str(e)}")
+
+    def delete_risk(self, project_id: str, index: int):
+        """Delete risk from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['risks']):
+                del project['risks'][index]
+                self.save()
+                self.log_activity(project_id, "Risk deleted")
+        except Exception as e:
+            logger.error(f"Error deleting risk: {str(e)}")
+
+    # --- TEAM MANAGEMENT ---
+
+    def add_team_member(self, project_id: str, name: str, role: str):
+        """Add team member to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['team'].append({"name": name, "role": role})
+                self.save()
+                self.log_activity(project_id, f"Team member added: {name}")
+        except Exception as e:
+            logger.error(f"Error adding team member: {str(e)}")
+
+    def delete_team_member(self, project_id: str, index: int):
+        """Delete team member from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['team']):
+                del project['team'][index]
+                self.save()
+                self.log_activity(project_id, "Team member deleted")
+        except Exception as e:
+            logger.error(f"Error deleting team member: {str(e)}")
+
+    # --- MILESTONE MANAGEMENT ---
+
+    def add_milestone(self, project_id: str, title: str, date: str):
+        """Add milestone to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['milestones'].append({"title": title, "date": date, "done": False})
+                self.save()
+                self.log_activity(project_id, f"Milestone added: {title}")
+        except Exception as e:
+            logger.error(f"Error adding milestone: {str(e)}")
+
+    def toggle_milestone(self, project_id: str, index: int):
+        """Toggle milestone done status"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['milestones']):
+                project['milestones'][index]['done'] = not project['milestones'][index]['done']
+                self.save()
+                self.log_activity(project_id, "Milestone toggled")
+        except Exception as e:
+            logger.error(f"Error toggling milestone: {str(e)}")
+
+    def delete_milestone(self, project_id: str, index: int):
+        """Delete milestone from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['milestones']):
+                del project['milestones'][index]
+                self.save()
+                self.log_activity(project_id, "Milestone deleted")
+        except Exception as e:
+            logger.error(f"Error deleting milestone: {str(e)}")
+
+    # --- TIME LOG MANAGEMENT ---
+
+    def add_time_log(self, project_id: str, date: str, category: str, hours: float, desc: str):
+        """Add time log to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['time_logs'].append({
+                    "date": date,
+                    "category": category,
+                    "hours": hours,
+                    "desc": desc
+                })
+                self.save()
+                self.log_activity(project_id, f"Time logged: {hours}h")
+        except Exception as e:
+            logger.error(f"Error adding time log: {str(e)}")
+
+    # --- REMAINING METHODS (SWOT, OKR, Wiki, etc.) ---
+
+    def add_decision(self, project_id: str, title: str, status: str, rationale: str):
+        """Add decision to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['decisions'].append({"title": title, "status": status, "rationale": rationale})
+                self.save()
+        except Exception as e:
+            logger.error(f"Error adding decision: {str(e)}")
+
+    def delete_decision(self, project_id: str, index: int):
+        """Delete decision from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['decisions']):
+                del project['decisions'][index]
+                self.save()
+        except Exception as e:
+            logger.error(f"Error deleting decision: {str(e)}")
+
+    def add_bug(self, project_id: str, title: str, severity: str):
+        """Add bug to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['bugs'].append({"title": title, "severity": severity, "status": "Open"})
+                self.save()
+        except Exception as e:
+            logger.error(f"Error adding bug: {str(e)}")
+
+    def toggle_bug(self, project_id: str, index: int):
+        """Toggle bug status"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['bugs']):
+                bug = project['bugs'][index]
+                bug['status'] = "Fixed" if bug['status'] == "Open" else "Open"
+                self.save()
+        except Exception as e:
+            logger.error(f"Error toggling bug: {str(e)}")
+
+    def delete_bug(self, project_id: str, index: int):
+        """Delete bug from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['bugs']):
+                del project['bugs'][index]
+                self.save()
+        except Exception as e:
+            logger.error(f"Error deleting bug: {str(e)}")
+
+    def add_stakeholder(self, project_id: str, name: str, org: str, influence: str):
+        """Add stakeholder to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['stakeholders'].append({"name": name, "org": org, "influence": influence})
+                self.save()
+        except Exception as e:
+            logger.error(f"Error adding stakeholder: {str(e)}")
+
+    def delete_stakeholder(self, project_id: str, index: int):
+        """Delete stakeholder from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['stakeholders']):
+                del project['stakeholders'][index]
+                self.save()
+        except Exception as e:
+            logger.error(f"Error deleting stakeholder: {str(e)}")
+
+    def add_meeting(self, project_id: str, date: str, title: str, summary: str):
+        """Add meeting to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['meetings'].append({"date": date, "title": title, "summary": summary})
+                self.save()
+        except Exception as e:
+            logger.error(f"Error adding meeting: {str(e)}")
+
+    def delete_meeting(self, project_id: str, index: int):
+        """Delete meeting from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['meetings']):
+                del project['meetings'][index]
+                self.save()
+        except Exception as e:
+            logger.error(f"Error deleting meeting: {str(e)}")
+
+    def add_secret(self, project_id: str, key: str, value: str):
+        """Add secret to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['secrets'].append({"key": key, "value": value})
+                self.save()
+        except Exception as e:
+            logger.error(f"Error adding secret: {str(e)}")
+
+    def delete_secret(self, project_id: str, index: int):
+        """Delete secret from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['secrets']):
+                del project['secrets'][index]
+                self.save()
+        except Exception as e:
+            logger.error(f"Error deleting secret: {str(e)}")
+
+    def add_swot(self, project_id: str, category: str, text: str):
+        """Add SWOT item to project"""
+        try:
+            project = self.get_project(project_id)
+            if project and 'swot' in project:
+                if category in project['swot']:
+                    project['swot'][category].append(text)
+                    self.save()
+        except Exception as e:
+            logger.error(f"Error adding SWOT: {str(e)}")
+
+    def delete_swot(self, project_id: str, category: str, index: int):
+        """Delete SWOT item from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and 'swot' in project:
+                if category in project['swot'] and index < len(project['swot'][category]):
+                    del project['swot'][category][index]
+                    self.save()
+        except Exception as e:
+            logger.error(f"Error deleting SWOT: {str(e)}")
+
+    def add_okr(self, project_id: str, objective: str):
+        """Add OKR to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['okrs'].append({"id": str(uuid.uuid4()), "objective": objective, "key_results": []})
+                self.save()
+        except Exception as e:
+            logger.error(f"Error adding OKR: {str(e)}")
+
+    def delete_okr(self, project_id: str, index: int):
+        """Delete OKR from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['okrs']):
+                del project['okrs'][index]
+                self.save()
+        except Exception as e:
+            logger.error(f"Error deleting OKR: {str(e)}")
+
+    def add_key_result(self, project_id: str, okr_id: str, title: str, progress: int):
+        """Add key result to OKR"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                for okr in project['okrs']:
+                    if okr['id'] == okr_id:
+                        okr['key_results'].append({"title": title, "progress": progress})
+                        self.save()
+                        break
+        except Exception as e:
+            logger.error(f"Error adding key result: {str(e)}")
+
+    def add_retro(self, project_id: str, category: str, text: str):
+        """Add retro item to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['retros'].append({"category": category, "text": text})
+                self.save()
+        except Exception as e:
+            logger.error(f"Error adding retro: {str(e)}")
+
+    def delete_retro(self, project_id: str, index: int):
+        """Delete retro from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['retros']):
+                del project['retros'][index]
+                self.save()
+        except Exception as e:
+            logger.error(f"Error deleting retro: {str(e)}")
+
+    def add_wiki_page(self, project_id: str, title: str, content: str):
+        """Add wiki page to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['wiki_pages'].append({"title": title, "content": content})
+                self.save()
+        except Exception as e:
+            logger.error(f"Error adding wiki page: {str(e)}")
+
+    def update_wiki_page(self, project_id: str, index: int, title: str, content: str):
+        """Update wiki page"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['wiki_pages']):
+                project['wiki_pages'][index] = {"title": title, "content": content}
+                self.save()
+        except Exception as e:
+            logger.error(f"Error updating wiki page: {str(e)}")
+
+    def delete_wiki_page(self, project_id: str, index: int):
+        """Delete wiki page from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['wiki_pages']):
+                del project['wiki_pages'][index]
+                self.save()
+        except Exception as e:
+            logger.error(f"Error deleting wiki page: {str(e)}")
+
+    def add_backlog_item(self, project_id: str, title: str, priority: str):
+        """Add backlog item to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['backlog'].append({"title": title, "priority": priority})
+                self.save()
+        except Exception as e:
+            logger.error(f"Error adding backlog item: {str(e)}")
+
+    def delete_backlog_item(self, project_id: str, index: int):
+        """Delete backlog item from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['backlog']):
+                del project['backlog'][index]
+                self.save()
+        except Exception as e:
+            logger.error(f"Error deleting backlog item: {str(e)}")
+
+    def add_test_case(self, project_id: str, title: str, steps: str, expected: str):
+        """Add test case to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['test_cases'].append({
+                    "id": str(uuid.uuid4()),
+                    "title": title,
+                    "steps": steps,
+                    "expected": expected,
+                    "status": "Untested"
+                })
+                self.save()
+        except Exception as e:
+            logger.error(f"Error adding test case: {str(e)}")
+
+    def update_test_status(self, project_id: str, test_id: str, status: str):
+        """Update test case status"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                for test in project['test_cases']:
+                    if test['id'] == test_id:
+                        test['status'] = status
+                        self.save()
+                        break
+        except Exception as e:
+            logger.error(f"Error updating test status: {str(e)}")
+
+    def delete_test_case(self, project_id: str, index: int):
+        """Delete test case from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['test_cases']):
+                del project['test_cases'][index]
+                self.save()
+        except Exception as e:
+            logger.error(f"Error deleting test case: {str(e)}")
+
+    def add_automation(self, project_id: str, trigger: str, action: str):
+        """Add automation to project"""
+        try:
+            project = self.get_project(project_id)
+            if project:
+                project['automations'].append({"trigger": trigger, "action": action})
+                self.save()
+        except Exception as e:
+            logger.error(f"Error adding automation: {str(e)}")
+
+    def delete_automation(self, project_id: str, index: int):
+        """Delete automation from project"""
+        try:
+            project = self.get_project(project_id)
+            if project and index < len(project['automations']):
+                del project['automations'][index]
+                self.save()
+        except Exception as e:
+            logger.error(f"Error deleting automation: {str(e)}")
 
     # --- EXPERIMENT MANAGEMENT ---
 
