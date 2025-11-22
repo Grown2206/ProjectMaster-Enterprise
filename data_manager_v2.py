@@ -137,11 +137,11 @@ class ProjectManager(DataManager):
         self._migrate_legacy_data()
 
         # User management
-        self.users_file = DataPaths.DATA_DIR / "users_data.json"
+        self.users_file = Config.DATA_DIR / "users_data.json"
         self.users = self._load_users()
 
         # Experiments management
-        self.experiments_file = DataPaths.DATA_DIR / "experiments_data.json"
+        self.experiments_file = Config.DATA_DIR / "experiments_data.json"
         self.experiments = self._load_experiments()
 
     def _load_users(self) -> List[Dict]:
