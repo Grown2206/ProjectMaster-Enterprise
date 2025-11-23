@@ -66,8 +66,10 @@ def render_kanban_card(manager, pid, task, possible_moves, current_status):
     # Detail Expander für Kommentare
     with st.expander(comm_icon):
         for c in task.get("comments", []):
-            st.markdown(f"<small>**{c['date']}**: {c['text']}</small>", unsafe_allow_html=True)
-        
+            # Support both 'date' and 'timestamp' fields for backward compatibility
+            comment_date = c.get('date') or c.get('timestamp', 'N/A')
+            st.markdown(f"<small>**{comment_date}**: {c['text']}</small>", unsafe_allow_html=True)
+
         new_comment = st.text_input("Kommentar...", key=f"nc_{task['id']}")
         if st.button("Senden", key=f"send_c_{task['id']}"):
             if new_comment:
